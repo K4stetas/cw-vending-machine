@@ -1,0 +1,2 @@
+# CosmWasmContract
+Vending machin
