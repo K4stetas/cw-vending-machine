@@ -12,4 +12,6 @@ pub enum ContractError {
     Payment(#[from] PaymentError),
     #[error("Admin {sender} is already in the admin list")]
     AlreadyExistsInTheList { sender: Addr },
+    #[error("You want to take {amount_to_take}, but the machine have only {amount_in_machine}")]
+    AmountIsIncorrect { amount_to_take: u64, amount_in_machine: u64},
 }

@@ -1,11 +1,10 @@
-use crate::msg::{AdminsListResp, ExecuteMsg, GreetResp, InstantiateMsg, QueryMsg};
+use crate::msg::*;
 use crate::error::ContractError;
 use cosmwasm_std::{
-    coins, to_json_binary, BankMsg, Binary, Deps, DepsMut, Env, Event, MessageInfo,
-    Response, StdResult,
+    to_json_binary, Binary, Deps, DepsMut, Env, Event, MessageInfo, Response, StdResult,
 };
 
-use crate::state::{ADMINS, DONATION_DENOM};
+use crate::state::{ADMINS, MACHINE, MachineItems};
 
 pub fn instantiate(
     deps: DepsMut,
@@ -19,7 +18,12 @@ pub fn instantiate(
         .map(|addr| deps.api.addr_validate(&addr))
         .collect();
     ADMINS.save(deps.storage, &admins?)?;
-    DONATION_DENOM.save(deps.storage, &msg.donation_denom)?;
+    let items = MachineItems {
+        chocolates: msg.chocolates,
+        water: msg.water,
+        chips: msg.chips,
+    };
+    MACHINE.save(deps.storage, &items)?;
 
     Ok(Response::new())
 }
@@ -30,6 +34,7 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         Greet {} => to_json_binary(&query::greet()?),
         AdminsList {} => to_json_binary(&query::admins_list(deps)?),
+        Items {} => to_json_binary(&query::items_count(deps)?),
     }
 }
  
@@ -49,6 +54,17 @@ mod query {
 
         Ok(resp)
     }
+
+    pub fn items_count(deps: Deps) -> StdResult<ItemsCount> {
+        let items: MachineItems = MACHINE.load(deps.storage)?;
+        let resp = ItemsCount {
+            chocolates: items.get_amount_chocolates(),
+            water: items.get_amount_water(),
+            chips: items.get_amount_chips(),
+        };
+
+        Ok(resp)
+    }
 }
 
 pub fn execute(
@@ -62,7 +78,6 @@ pub fn execute(
     match msg {
         AddMembers { admins } => exec::add_members(deps, info, admins),
         Leave {} => exec::leave(deps, info).map_err(Into::into),
-        Donate {} => exec::donate(deps, info),
     }
 }
 
@@ -121,28 +136,6 @@ mod exec {
 
         Ok(Response::new())
     }
-
-    pub fn donate(deps: DepsMut, info: MessageInfo) -> Result<Response, ContractError> {
-        let denom = DONATION_DENOM.load(deps.storage)?;
-        let admins = ADMINS.load(deps.storage)?;
-
-        let donation = cw_utils::must_pay(&info, &denom)?.u128();
-
-        let donation_per_admin = donation / (admins.len() as u128);
-
-        let messages = admins.into_iter().map(|admin| BankMsg::Send {
-            to_address: admin.to_string(),
-            amount: coins(donation_per_admin, &denom),
-        });
-
-        let resp = Response::new()
-            .add_messages(messages)
-            .add_attribute("action", "donate")
-            .add_attribute("amount", donation.to_string())
-            .add_attribute("per_admin", donation_per_admin.to_string());
-
-        Ok(resp)
-    }
 }
 
 #[cfg(test)]
@@ -163,7 +156,7 @@ mod tests {
             .instantiate_contract(
                 code_id,
                 Addr::unchecked("owner"),
-                &InstantiateMsg { admins: vec![], donation_denom: "lol".to_owned() },
+                &InstantiateMsg { admins: vec![], chocolates: 20, water: 20, chips: 20},
                 &[],
                 "Contract",
                 None,
@@ -194,8 +187,7 @@ mod tests {
             .instantiate_contract(
                 code_id,
                 Addr::unchecked("owner"),
-                &InstantiateMsg { admins: vec![],
-                    donation_denom: "lol".to_owned() },
+                &InstantiateMsg { admins: vec![], chocolates: 20, water: 20, chips: 20},
                 &[],
                 "Contract",
                 None,
@@ -214,9 +206,7 @@ mod tests {
                 code_id,
                 Addr::unchecked("owner"),
                 &InstantiateMsg {
-                    admins: vec!["admin1".to_owned(), "admin2".to_owned()],
-                    donation_denom: "lol".to_owned()
-                },
+                    admins: vec!["admin1".to_owned(), "admin2".to_owned()], chocolates: 20, water: 20, chips: 20},
                 &[],
                 "Contract 2",
                 None,
@@ -247,7 +237,7 @@ mod tests {
             .instantiate_contract(
                 code_id,
                 Addr::unchecked("owner"),
-                &InstantiateMsg { admins: vec![], donation_denom: "lol".to_owned() },
+                &InstantiateMsg { admins: vec![], chocolates: 20, water: 20, chips: 20},
                 &[],
                 "Contract",
                 None,
@@ -284,7 +274,7 @@ mod tests {
             .instantiate_contract(
                 code_id,
                 Addr::unchecked("owner"),
-                &InstantiateMsg { admins: vec!["admin1".to_owned(), "admin2".to_owned()], donation_denom: "lol".to_owned()},
+                &InstantiateMsg { admins: vec!["admin1".to_owned(), "admin2".to_owned()], chocolates: 20, water: 20, chips: 20},
                 &[],
                 "Contract",
                 None,
@@ -353,9 +343,7 @@ mod tests {
                 code_id,
                 Addr::unchecked("owner"),
                 &InstantiateMsg {
-                    admins: vec!["owner".to_owned()],
-                    donation_denom: "lol".to_owned()
-                },
+                    admins: vec!["owner".to_owned()], chocolates: 20, water: 20, chips: 20},
                 &[],
                 "Contract",
                 None,
@@ -410,77 +398,6 @@ mod tests {
     }
 
     #[test]
-    fn donations() {
-        let mut app = App::new(|router, _, storage| {
-            router
-                .bank
-                .init_balance(storage, &Addr::unchecked("user"), coins(5, "eth"))
-                .unwrap()
-        });
-
-        let code = ContractWrapper::new(execute, instantiate, query);
-        let code_id = app.store_code(Box::new(code));
-
-        let addr = app
-            .instantiate_contract(
-                code_id,
-                Addr::unchecked("owner"),
-                &InstantiateMsg {
-                    admins: vec!["admin1".to_owned(), "admin2".to_owned()],
-                    donation_denom: "eth".to_owned(),
-                },
-                &[],
-                "Contract",
-                None,
-            )
-            .unwrap();
-
-        app.execute_contract(
-            Addr::unchecked("user"),
-            addr.clone(),
-            &ExecuteMsg::Donate {},
-            &coins(5, "eth"),
-        )
-        .unwrap();
-
-        assert_eq!(
-            app.wrap()
-                .query_balance("user", "eth")
-                .unwrap()
-                .amount
-                .u128(),
-            0
-        );
-
-        assert_eq!(
-            app.wrap()
-                .query_balance(&addr, "eth")
-                .unwrap()
-                .amount
-                .u128(),
-            1
-        );
-
-        assert_eq!(
-            app.wrap()
-                .query_balance("admin1", "eth")
-                .unwrap()
-                .amount
-                .u128(),
-            2
-        );
-
-        assert_eq!(
-            app.wrap()
-                .query_balance("admin2", "eth")
-                .unwrap()
-                .amount
-                .u128(),
-            2
-        );
-    }
-
-    #[test]
     fn add_members_double_adding() { 
         let mut app = App::default();
 
@@ -492,9 +409,7 @@ mod tests {
                 code_id,
                 Addr::unchecked("owner"),
                 &InstantiateMsg {
-                    admins: vec!["owner".to_owned()],
-                    donation_denom: "lol".to_owned()
-                },
+                    admins: vec!["owner".to_owned()], chocolates: 20, water: 20, chips: 20},
                 &[],
                 "Contract",
                 None,

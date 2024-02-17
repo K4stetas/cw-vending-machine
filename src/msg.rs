@@ -4,14 +4,15 @@ use cosmwasm_schema::{cw_serde, QueryResponses};
 #[cw_serde]
 pub struct InstantiateMsg {
     pub admins: Vec<String>,
-    pub donation_denom: String,
+    pub chocolates: u64,
+    pub water: u64,
+    pub chips: u64,
 }
 
 #[cw_serde]
 pub enum ExecuteMsg {
     AddMembers { admins: Vec<String> },
     Leave {},
-    Donate {},
 }
 
 #[cw_serde]
@@ -25,10 +26,19 @@ pub struct AdminsListResp {
 }
 
 #[cw_serde]
+pub struct ItemsCount {
+    pub chocolates: u64,
+    pub water: u64,
+    pub chips: u64,
+}
+
+#[cw_serde]
 #[derive(QueryResponses)]
 pub enum QueryMsg {
     #[returns(GreetResp)]
     Greet {},
     #[returns(AdminsListResp)]
     AdminsList {},
+    #[returns(ItemsCount)]
+    Items {},
 }
