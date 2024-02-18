@@ -14,7 +14,6 @@ pub struct _InstantiateMsg_ {
 ```
 
 ## Messages
-___
 
 There are two messages supported by vending machine contract:
 
@@ -29,6 +28,5 @@ _"water_bottle"_ - shows how many water bottles are left after the refilling
 _"chips"_ - shows how many chips are left after the refilling
 
 ## Queries
-___
 
 __ItemsCount__ - returns how many snacks of each type are left in the machine
