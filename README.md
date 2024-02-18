@@ -17,9 +17,7 @@ pub struct _InstantiateMsg_ {
 
 There are two messages supported by vending machine smart contract:
 
-__GetItem__ { category } - removes 1 snack of the passed category. All users can use this message.
-
-Three categories can be passed as parameter:
+__GetItem__ { category } - removes 1 snack of the passed category. All users can use this message.\nThree categories can be passed as parameter:
 * _"chocolate bar"_
 * _"water bottle"_
 * _"chips packet"_
