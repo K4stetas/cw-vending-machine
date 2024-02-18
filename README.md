@@ -30,9 +30,9 @@ _"left"_ - shows how many items of the passed category are left.
 __Refill__ { number } - increases the number of snacks by the number. Only the owner is able to perfom refilling.
 
 Attributes emitted:
-_"chocolate_bars"_ - shows how many chocolate bars are left after the refilling
-_"water_bottles"_ - shows how many water bottles are left after the refilling
-_"chips_packets"_ - shows how many chips packets are left after the refilling
+*"chocolate_bars"* - shows how many chocolate bars are left after the refilling
+*"water_bottles"* - shows how many water bottles are left after the refilling
+*"chips_packets"* - shows how many chips packets are left after the refilling
 
 
 ## Queries
