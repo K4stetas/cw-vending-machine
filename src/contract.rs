@@ -15,9 +15,9 @@ pub fn instantiate(
     OWNER.save(deps.storage, &info.sender)?;
 
     let items = MachineItems {
-        chocolates: msg.chocolates,
+        chocolate_bars: msg.chocolate_bars,
         water_bottles: msg.water_bottles,
-        chips: msg.chips,
+        chips_packets: msg.chips_packets,
     };
     MACHINE.save(deps.storage, &items)?;
 
@@ -38,9 +38,9 @@ mod query {
     pub fn items_count(deps: Deps) -> StdResult<Items> {
         let items: MachineItems = MACHINE.load(deps.storage)?;
         let resp = Items {
-            chocolates: items.chocolates,
+            chocolate_bars: items.chocolate_bars,
             water_bottles: items.water_bottles,
-            chips: items.chips,
+            chips_packets: items.chips_packets,
         };
 
         Ok(resp)
@@ -57,9 +57,9 @@ pub fn execute(
 
     match msg {
         GetItem { category } => match category.as_str() {
-            "chocolates" => exec::take_chocolates(deps),
-            "water bottles" => exec::take_water(deps),
-            "chips" => exec::take_chips(deps),
+            "chocolate bar" => exec::take_chocolate(deps),
+            "water bottle" => exec::take_water(deps),
+            "chips packet" => exec::take_chips(deps),
             _ => return Err(ContractError::IncorrectTypeOfItem {})
         },
         Refill { number } => exec::refill(deps, info, number),
@@ -69,16 +69,16 @@ pub fn execute(
 mod exec {
     use super::*;
     
-    pub fn take_chocolates(deps: DepsMut) -> Result<Response, ContractError> {
+    pub fn take_chocolate(deps: DepsMut) -> Result<Response, ContractError> {
         let mut items: MachineItems = MACHINE.load(deps.storage)?;
-        if 0 == items.chocolates {
+        if 0 == items.chocolate_bars {
             return Err(ContractError::NoSnackLeft {
-                category: "chocolates".to_owned(),
+                category: "chocolate bars".to_owned(),
             });
         }
-        items.chocolates -= 1;
+        items.chocolate_bars -= 1;
 
-        let event = Event::new("chocolate_is_taken").add_attribute("left", items.chocolates.to_string());
+        let event = Event::new("chocolate_bar_is_taken").add_attribute("left", items.chocolate_bars.to_string());
 
         MACHINE.save(deps.storage, &items)?;
         
@@ -107,14 +107,14 @@ mod exec {
 
     pub fn take_chips(deps: DepsMut) -> Result<Response, ContractError> {
         let mut items: MachineItems = MACHINE.load(deps.storage)?;
-        if 0 == items.chips {
+        if 0 == items.chips_packets {
             return Err(ContractError::NoSnackLeft {
-                category: "chips".to_owned(),
+                category: "chips packets".to_owned(),
             });
         }
-        items.chips -= 1;
+        items.chips_packets -= 1;
 
-        let event = Event::new("chips_are_taken").add_attribute("left", items.chips.to_string());
+        let event = Event::new("chips_packet_are_taken").add_attribute("left", items.chips_packets.to_string());
 
         MACHINE.save(deps.storage, &items)?;
         
@@ -133,12 +133,12 @@ mod exec {
 
         let mut items: MachineItems = MACHINE.load(deps.storage)?;
         
-        let chocolates = items.chocolates.checked_add(number);
+        let chocolate_bars = items.chocolate_bars.checked_add(number);
         let water_bottles = items.water_bottles.checked_add(number);
-        let chips = items.chips.checked_add(number);
+        let chips_packets = items.chips_packets.checked_add(number);
 
-        match chocolates {
-            Some(res) => items.chocolates = res,
+        match chocolate_bars {
+            Some(res) => items.chocolate_bars = res,
             None => return Err(ContractError::TooBigRefill {})
         }
 
@@ -147,15 +147,15 @@ mod exec {
             None => return Err(ContractError::TooBigRefill {})
         }
         
-        match chips {
-            Some(res) => items.chips = res,
+        match chips_packets {
+            Some(res) => items.chips_packets = res,
             None => return Err(ContractError::TooBigRefill {})
         }
 
         let event = Event::new("snacks_are_refilled")
-            .add_attribute("chocolates", items.chocolates.to_string())
+            .add_attribute("chocolate_bars", items.chocolate_bars.to_string())
             .add_attribute("water_bottles", items.water_bottles.to_string())
-            .add_attribute("chips", items.chips.to_string());
+            .add_attribute("chips_packets", items.chips_packets.to_string());
 
         MACHINE.save(deps.storage, &items)?;
         
@@ -183,7 +183,11 @@ mod tests {
             .instantiate_contract(
                 code_id,
                 Addr::unchecked("owner"),
-                &InstantiateMsg { chocolates: 20, water_bottles: 20, chips: 20},
+                &InstantiateMsg {
+                    chocolate_bars: 20,
+                    water_bottles: 20,
+                    chips_packets: 20
+                },
                 &[],
                 "Contract",
                 None,
@@ -198,9 +202,9 @@ mod tests {
         assert_eq!(
             resp,
             Items {
-                chocolates: 20,
+                chocolate_bars: 20,
                 water_bottles: 20,
-                chips: 20,
+                chips_packets: 20,
             }
         );
     }
@@ -216,7 +220,11 @@ mod tests {
             .instantiate_contract(
                 code_id,
                 Addr::unchecked("owner"),
-                &InstantiateMsg { chocolates: 20, water_bottles: 0, chips: 20},
+                &InstantiateMsg {
+                    chocolate_bars: 20,
+                    water_bottles: 0,
+                    chips_packets: 20
+                },
                 &[],
                 "Contract",
                 None,
@@ -228,7 +236,7 @@ mod tests {
                 Addr::unchecked("user1"),
                 addr.clone(),
                 &ExecuteMsg::GetItem { 
-                    category: "chocolates".to_owned()
+                    category: "chocolate bar".to_owned()
                  },
                 &[],
             )
@@ -243,9 +251,9 @@ mod tests {
         assert_eq!(
             resp,
             Items {
-                chocolates: 19,
+                chocolate_bars: 19,
                 water_bottles: 0,
-                chips: 20,
+                chips_packets: 20,
             }
         );
 
@@ -254,7 +262,7 @@ mod tests {
                 Addr::unchecked("user2"),
                 addr.clone(),
                 &ExecuteMsg::GetItem { 
-                    category: "water bottles".to_owned()
+                    category: "water bottle".to_owned()
                  },
                 &[],
             )
@@ -275,9 +283,9 @@ mod tests {
         assert_eq!(
             resp,
             Items {
-                chocolates: 19,
+                chocolate_bars: 19,
                 water_bottles: 0,
-                chips: 20,
+                chips_packets: 20,
             }
         );
     }
@@ -293,7 +301,11 @@ mod tests {
             .instantiate_contract(
                 code_id,
                 Addr::unchecked("owner"),
-                &InstantiateMsg { chocolates: 20, water_bottles: 0, chips: 20 },
+                &InstantiateMsg {
+                    chocolate_bars: 20,
+                    water_bottles: 0,
+                    chips_packets: 20
+                },
                 &[],
                 "Contract",
                 None,
@@ -305,7 +317,7 @@ mod tests {
                 Addr::unchecked("user1"),
                 addr.clone(),
                 &ExecuteMsg::GetItem { 
-                    category: "chocolates".to_owned()
+                    category: "chocolate bar".to_owned()
                  },
                 &[],
             )
@@ -320,9 +332,9 @@ mod tests {
         assert_eq!(
             resp,
             Items {
-                chocolates: 19,
+                chocolate_bars: 19,
                 water_bottles: 0,
-                chips: 20,
+                chips_packets: 20,
             }
         );
 
@@ -352,9 +364,9 @@ mod tests {
         assert_eq!(
             resp,
             Items {
-                chocolates: 19,
+                chocolate_bars: 19,
                 water_bottles: 0,
-                chips: 20,
+                chips_packets: 20,
             }
         );
 
@@ -377,9 +389,9 @@ mod tests {
         assert_eq!(
             resp,
             Items {
-                chocolates: 59,
+                chocolate_bars: 59,
                 water_bottles: 40,
-                chips: 60,
+                chips_packets: 60,
             }
         );
     }

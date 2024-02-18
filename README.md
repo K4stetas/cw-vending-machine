@@ -18,14 +18,22 @@ pub struct _InstantiateMsg_ {
 There are two messages supported by vending machine smart contract:
 
 __GetItem__ { category } - removes 1 snack of the passed category. All users can use this message.
+
+Three categories can be passed as parameter:
+_"chocolate bar"_
+_"water bottle"_
+_"chips packet"_
+
 Attributes emitted:
 _"left"_ - shows how many items of the passed category are left.
 
 __Refill__ { number } - increases the number of snacks by the number. Only the owner is able to perfom refilling.
+
 Attributes emitted:
 _"chocolate_bars"_ - shows how many chocolate bars are left after the refilling
 _"water_bottles"_ - shows how many water bottles are left after the refilling
 _"chips_packets"_ - shows how many chips packets are left after the refilling
+
 
 ## Queries
 
