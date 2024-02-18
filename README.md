@@ -25,7 +25,7 @@ Three categories can be passed as parameter:
 * _"chips packet"_
 
 Attributes emitted:
-_"left"_ - shows how many items of the passed category are left.
+* _"left"_ - shows how many items of the passed category are left.
 
 __Refill__ { number } - increases the number of snacks by the number. Only the owner is able to perfom refilling.
 
