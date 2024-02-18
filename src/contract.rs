@@ -1,26 +1,22 @@
 use crate::msg::*;
 use crate::error::ContractError;
 use cosmwasm_std::{
-    to_json_binary, Binary, Deps, DepsMut, Env, Event, MessageInfo, Response, StdResult,
+    Addr, to_json_binary, Binary, Deps, DepsMut, Env, Event, MessageInfo, Response, StdResult,
 };
 
-use crate::state::{ADMINS, MACHINE, MachineItems};
+use crate::state::{MACHINE, MachineItems, OWNER};
 
 pub fn instantiate(
     deps: DepsMut,
     _env: Env,
-    _info: MessageInfo,
+    info: MessageInfo,
     msg: InstantiateMsg,
 ) -> StdResult<Response> {
-    let admins: StdResult<Vec<_>> = msg
-        .admins
-        .into_iter()
-        .map(|addr| deps.api.addr_validate(&addr))
-        .collect();
-    ADMINS.save(deps.storage, &admins?)?;
+    OWNER.save(deps.storage, &info.sender)?;
+
     let items = MachineItems {
         chocolates: msg.chocolates,
-        water: msg.water,
+        water_bottles: msg.water_bottles,
         chips: msg.chips,
     };
     MACHINE.save(deps.storage, &items)?;
@@ -32,35 +28,19 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     use QueryMsg::*;
 
     match msg {
-        Greet {} => to_json_binary(&query::greet()?),
-        AdminsList {} => to_json_binary(&query::admins_list(deps)?),
-        Items {} => to_json_binary(&query::items_count(deps)?),
+        ItemsCount {} => to_json_binary(&query::items_count(deps)?),
     }
 }
  
 mod query {
-
     use super::*;
 
-    pub fn admins_list(deps: Deps) -> StdResult<AdminsListResp> {
-        let admins = ADMINS.load(deps.storage)?;
-        let resp = AdminsListResp { admins };
-        Ok(resp)
-    }
-    pub fn greet() -> StdResult<GreetResp> {
-        let resp = GreetResp {
-            message: "Hello World".to_owned(),
-        };
-
-        Ok(resp)
-    }
-
-    pub fn items_count(deps: Deps) -> StdResult<ItemsCount> {
+    pub fn items_count(deps: Deps) -> StdResult<Items> {
         let items: MachineItems = MACHINE.load(deps.storage)?;
-        let resp = ItemsCount {
-            chocolates: items.get_amount_chocolates(),
-            water: items.get_amount_water(),
-            chips: items.get_amount_chips(),
+        let resp = Items {
+            chocolates: items.chocolates,
+            water_bottles: items.water_bottles,
+            chips: items.chips,
         };
 
         Ok(resp)
@@ -76,65 +56,112 @@ pub fn execute(
     use ExecuteMsg::*;
 
     match msg {
-        AddMembers { admins } => exec::add_members(deps, info, admins),
-        Leave {} => exec::leave(deps, info).map_err(Into::into),
+        GetItem { category } => match category.as_str() {
+            "chocolates" => exec::take_chocolates(deps),
+            "water bottles" => exec::take_water(deps),
+            "chips" => exec::take_chips(deps),
+            _ => return Err(ContractError::IncorrectTypeOfItem {})
+        },
+        Refill { number } => exec::refill(deps, info, number),
     }
 }
 
 mod exec {
     use super::*;
+    
+    pub fn take_chocolates(deps: DepsMut) -> Result<Response, ContractError> {
+        let mut items: MachineItems = MACHINE.load(deps.storage)?;
+        if 0 == items.chocolates {
+            return Err(ContractError::NoSnackLeft {
+                category: "chocolates".to_owned(),
+            });
+        }
+        items.chocolates -= 1;
 
-    pub fn add_members(
-        deps: DepsMut,
-        info: MessageInfo,
-        admins: Vec<String>,
-    ) -> Result<Response, ContractError> {
-        let mut curr_admins = ADMINS.load(deps.storage)?;
-        if !curr_admins.contains(&info.sender) {
-            return Err(ContractError::Unauthorized {
+        let event = Event::new("chocolate_is_taken").add_attribute("left", items.chocolates.to_string());
+
+        MACHINE.save(deps.storage, &items)?;
+        
+        let resp = Response::new().add_event(event);
+        
+        Ok(resp)
+    }
+
+    pub fn take_water(deps: DepsMut) -> Result<Response, ContractError> {
+        let mut items: MachineItems = MACHINE.load(deps.storage)?;
+        if 0 == items.water_bottles {
+            return Err(ContractError::NoSnackLeft {
+                category: "water bottles".to_owned(),
+            });
+        }
+        items.water_bottles -= 1;
+
+        let event = Event::new("water_bottle_is_taken").add_attribute("left", items.water_bottles.to_string());
+
+        MACHINE.save(deps.storage, &items)?;
+        
+        let resp = Response::new().add_event(event);
+        
+        Ok(resp)
+    }
+
+    pub fn take_chips(deps: DepsMut) -> Result<Response, ContractError> {
+        let mut items: MachineItems = MACHINE.load(deps.storage)?;
+        if 0 == items.chips {
+            return Err(ContractError::NoSnackLeft {
+                category: "chips".to_owned(),
+            });
+        }
+        items.chips -= 1;
+
+        let event = Event::new("chips_are_taken").add_attribute("left", items.chips.to_string());
+
+        MACHINE.save(deps.storage, &items)?;
+        
+        let resp = Response::new().add_event(event);
+        
+        Ok(resp)
+    }
+
+    pub fn refill(deps: DepsMut, info: MessageInfo, number: u64) -> Result<Response, ContractError> {
+        let owner: Addr = OWNER.load(deps.storage)?;
+        if owner != info.sender {
+            return Err(ContractError::RefillerIsNotTheOwner {
                 sender: info.sender,
             });
         }
 
-        let events = admins
-            .iter()
-            .map(|admin| Event::new("admin_added").add_attribute("addr", admin));
+        let mut items: MachineItems = MACHINE.load(deps.storage)?;
         
-        let resp = Response::new()
-            .add_events(events)
-            .add_attribute("action", "add_members")
-            .add_attribute("added_count", admins.len().to_string());
+        let chocolates = items.chocolates.checked_add(number);
+        let water_bottles = items.water_bottles.checked_add(number);
+        let chips = items.chips.checked_add(number);
 
-        let admins: StdResult<Vec<_>> = admins
-            .into_iter()
-            .map(|addr| deps.api.addr_validate(&addr))
-            .collect();
+        match chocolates {
+            Some(res) => items.chocolates = res,
+            None => return Err(ContractError::TooBigRefill {})
+        }
 
-        // check wether some admin want to be added additional time
-        for admin in admins.as_ref().unwrap() {
-            if curr_admins.contains(&admin) {
-                return Err(ContractError::AlreadyExistsInTheList {
-                    sender: info.sender,
-                });
-            }
+        match water_bottles {
+            Some(res) => items.water_bottles = res,
+            None => return Err(ContractError::TooBigRefill {})
         }
         
-        curr_admins.append(&mut admins?);
-        ADMINS.save(deps.storage, &curr_admins)?;
+        match chips {
+            Some(res) => items.chips = res,
+            None => return Err(ContractError::TooBigRefill {})
+        }
 
+        let event = Event::new("snacks_are_refilled")
+            .add_attribute("chocolates", items.chocolates.to_string())
+            .add_attribute("water_bottles", items.water_bottles.to_string())
+            .add_attribute("chips", items.chips.to_string());
+
+        MACHINE.save(deps.storage, &items)?;
+        
+        let resp = Response::new().add_event(event);
+        
         Ok(resp)
-    }
-
-    pub fn leave(deps: DepsMut, info: MessageInfo) -> StdResult<Response> {
-        ADMINS.update(deps.storage, move |admins| -> StdResult<_> {
-            let admins = admins
-                .into_iter()
-                .filter(|admin| *admin != info.sender)
-                .collect();
-            Ok(admins)
-        })?;
-
-        Ok(Response::new())
     }
 }
 
@@ -146,7 +173,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn greet_query() {
+    fn items_count_query() {
         let mut app = App::default();
 
         let code = ContractWrapper::new(execute, instantiate, query);
@@ -156,28 +183,30 @@ mod tests {
             .instantiate_contract(
                 code_id,
                 Addr::unchecked("owner"),
-                &InstantiateMsg { admins: vec![], chocolates: 20, water: 20, chips: 20},
+                &InstantiateMsg { chocolates: 20, water_bottles: 20, chips: 20},
                 &[],
                 "Contract",
                 None,
             )
             .unwrap();
 
-        let resp: GreetResp = app
+        let resp: Items = app
             .wrap()
-            .query_wasm_smart(addr, &QueryMsg::Greet {})
+            .query_wasm_smart(addr, &QueryMsg::ItemsCount {})
             .unwrap();
 
         assert_eq!(
             resp,
-            GreetResp {
-                message: "Hello World".to_owned()
+            Items {
+                chocolates: 20,
+                water_bottles: 20,
+                chips: 20,
             }
         );
     }
 
     #[test]
-    fn instantiation() {
+    fn take_stored_items() {
         let mut app = App::default();
 
         let code = ContractWrapper::new(execute, instantiate, query);
@@ -187,252 +216,171 @@ mod tests {
             .instantiate_contract(
                 code_id,
                 Addr::unchecked("owner"),
-                &InstantiateMsg { admins: vec![], chocolates: 20, water: 20, chips: 20},
+                &InstantiateMsg { chocolates: 20, water_bottles: 0, chips: 20},
                 &[],
                 "Contract",
                 None,
             )
             .unwrap();
-
-        let resp: AdminsListResp = app
-            .wrap()
-            .query_wasm_smart(addr, &QueryMsg::AdminsList {})
-            .unwrap();
-
-        assert_eq!(resp, AdminsListResp { admins: vec![] });
-
-        let addr = app
-            .instantiate_contract(
-                code_id,
-                Addr::unchecked("owner"),
-                &InstantiateMsg {
-                    admins: vec!["admin1".to_owned(), "admin2".to_owned()], chocolates: 20, water: 20, chips: 20},
-                &[],
-                "Contract 2",
-                None,
-            )
-            .unwrap();
-
-        let resp: AdminsListResp = app
-            .wrap()
-            .query_wasm_smart(addr, &QueryMsg::AdminsList {})
-            .unwrap();
-
-        assert_eq!(
-            resp,
-            AdminsListResp {
-                admins: vec![Addr::unchecked("admin1"), Addr::unchecked("admin2")],
-            }
-        );
-    }
-
-    #[test]
-    fn unauthorized() {
-        let mut app = App::default();
-
-        let code = ContractWrapper::new(execute, instantiate, query);
-        let code_id = app.store_code(Box::new(code));
-
-        let addr = app
-            .instantiate_contract(
-                code_id,
-                Addr::unchecked("owner"),
-                &InstantiateMsg { admins: vec![], chocolates: 20, water: 20, chips: 20},
-                &[],
-                "Contract",
-                None,
-            )
-            .unwrap();
-
-        let err = app
-            .execute_contract(
-                Addr::unchecked("user"),
-                addr,
-                &ExecuteMsg::AddMembers {
-                    admins: vec!["user".to_owned()],
-                },
-                &[],
-            )
-            .unwrap_err();
-
-        assert_eq!(
-            ContractError::Unauthorized {
-                sender: Addr::unchecked("user")
-            },
-            err.downcast().unwrap()
-        );
-    }
-
-    #[test]
-    fn add_and_check() {
-        let mut app = App::default();
-
-        let code = ContractWrapper::new(execute, instantiate, query);
-        let code_id = app.store_code(Box::new(code));
-
-        let addr = app
-            .instantiate_contract(
-                code_id,
-                Addr::unchecked("owner"),
-                &InstantiateMsg { admins: vec!["admin1".to_owned(), "admin2".to_owned()], chocolates: 20, water: 20, chips: 20},
-                &[],
-                "Contract",
-                None,
-            )
-            .unwrap();
-        
-        let addr_clone = addr.clone();
 
         let _response = app
             .execute_contract(
-                Addr::unchecked("admin1"),
-                addr,
-                &ExecuteMsg::Leave { },
-                &[],
-            )
-            .unwrap();
-
-        
-        let resp: AdminsListResp = app
-            .wrap()
-            .query_wasm_smart(&addr_clone, &QueryMsg::AdminsList {})
-            .unwrap();
-
-        assert_eq!(
-            resp,
-            AdminsListResp {
-                admins: vec![Addr::unchecked("admin2")],
-            }
-        );
-
-        let addr = addr_clone.clone();
-
-        let _response = app
-            .execute_contract(
-                Addr::unchecked("admin2"),
-                addr_clone,
-                &ExecuteMsg::AddMembers {
-                    admins: vec!["user".to_owned()],
-                },
-                &[],
-            )
-            .unwrap();
-        
-        let resp: AdminsListResp = app
-            .wrap()
-            .query_wasm_smart(&addr, &QueryMsg::AdminsList {})
-            .unwrap();
-
-        assert_eq!(
-            resp,
-            AdminsListResp {
-                admins: vec![Addr::unchecked("admin2"), Addr::unchecked("user")],
-            }
-        );
-    }
-
-    #[test]
-    fn add_members() { 
-        let mut app = App::default();
-
-        let code = ContractWrapper::new(execute, instantiate, query);
-        let code_id = app.store_code(Box::new(code));
-
-        let addr = app
-            .instantiate_contract(
-                code_id,
-                Addr::unchecked("owner"),
-                &InstantiateMsg {
-                    admins: vec!["owner".to_owned()], chocolates: 20, water: 20, chips: 20},
-                &[],
-                "Contract",
-                None,
-            )
-            .unwrap();
-
-        let resp = app
-            .execute_contract(
-                Addr::unchecked("owner"),
-                addr,
-                &ExecuteMsg::AddMembers {
-                    admins: vec!["user".to_owned()],
-                },
-                &[],
-            )
-            .unwrap();
-
-        let wasm = resp.events.iter().find(|ev| ev.ty == "wasm").unwrap();
-        assert_eq!(
-            wasm.attributes
-                .iter()
-                .find(|attr| attr.key == "action")
-                .unwrap()
-                .value,
-            "add_members"
-        );
-        assert_eq!(
-            wasm.attributes
-                .iter()
-                .find(|attr| attr.key == "added_count")
-                .unwrap()
-                .value,
-            "1"
-        );
-
-        let admin_added: Vec<_> = resp
-            .events
-            .iter()
-            .filter(|ev| ev.ty == "wasm-admin_added")
-            .collect();
-        assert_eq!(admin_added.len(), 1);
-
-        assert_eq!(
-            admin_added[0]
-                .attributes
-                .iter()
-                .find(|attr| attr.key == "addr")
-                .unwrap()
-                .value,
-            "user"
-        );
-    }
-
-    #[test]
-    fn add_members_double_adding() { 
-        let mut app = App::default();
-
-        let code = ContractWrapper::new(execute, instantiate, query);
-        let code_id = app.store_code(Box::new(code));
-
-        let addr = app
-            .instantiate_contract(
-                code_id,
-                Addr::unchecked("owner"),
-                &InstantiateMsg {
-                    admins: vec!["owner".to_owned()], chocolates: 20, water: 20, chips: 20},
-                &[],
-                "Contract",
-                None,
-            )
-            .unwrap();
-
-        let resp = app
-            .execute_contract(
-                Addr::unchecked("owner"),
+                Addr::unchecked("user1"),
                 addr.clone(),
-                &ExecuteMsg::AddMembers {
-                    admins: vec!["owner".to_owned()],
-                },
+                &ExecuteMsg::GetItem { 
+                    category: "chocolates".to_owned()
+                 },
+                &[],
+            )
+            .unwrap();
+
+        
+        let resp: Items = app
+            .wrap()
+            .query_wasm_smart(&addr, &QueryMsg::ItemsCount {})
+            .unwrap();
+
+        assert_eq!(
+            resp,
+            Items {
+                chocolates: 19,
+                water_bottles: 0,
+                chips: 20,
+            }
+        );
+
+        let resp = app
+            .execute_contract(
+                Addr::unchecked("user2"),
+                addr.clone(),
+                &ExecuteMsg::GetItem { 
+                    category: "water bottles".to_owned()
+                 },
                 &[],
             )
             .unwrap_err();
-
+            
         assert_eq!(
-            ContractError::AlreadyExistsInTheList {
-                sender: Addr::unchecked("owner")
+            ContractError::NoSnackLeft {
+                category: "water bottles".to_owned(),
             },
             resp.downcast().unwrap()
         );
 
+        let resp: Items = app
+            .wrap()
+            .query_wasm_smart(&addr, &QueryMsg::ItemsCount {})
+            .unwrap();
+
+        assert_eq!(
+            resp,
+            Items {
+                chocolates: 19,
+                water_bottles: 0,
+                chips: 20,
+            }
+        );
+    }
+
+    #[test]
+    fn refill_items() {
+        let mut app = App::default();
+
+        let code = ContractWrapper::new(execute, instantiate, query);
+        let code_id = app.store_code(Box::new(code));
+
+        let addr = app
+            .instantiate_contract(
+                code_id,
+                Addr::unchecked("owner"),
+                &InstantiateMsg { chocolates: 20, water_bottles: 0, chips: 20 },
+                &[],
+                "Contract",
+                None,
+            )
+            .unwrap();
+
+        let _response = app
+            .execute_contract(
+                Addr::unchecked("user1"),
+                addr.clone(),
+                &ExecuteMsg::GetItem { 
+                    category: "chocolates".to_owned()
+                 },
+                &[],
+            )
+            .unwrap();
+
+        
+        let resp: Items = app
+            .wrap()
+            .query_wasm_smart(&addr, &QueryMsg::ItemsCount {})
+            .unwrap();
+
+        assert_eq!(
+            resp,
+            Items {
+                chocolates: 19,
+                water_bottles: 0,
+                chips: 20,
+            }
+        );
+
+        let resp = app
+            .execute_contract(
+                Addr::unchecked("admin1"),
+                addr.clone(),
+                &ExecuteMsg::Refill { 
+                    number: 40
+                 },
+                &[],
+            )
+            .unwrap_err();
+            
+        assert_eq!(
+            ContractError::RefillerIsNotTheOwner {
+                sender: Addr::unchecked("admin1"),
+            },
+            resp.downcast().unwrap()
+        );
+
+        let resp: Items = app
+            .wrap()
+            .query_wasm_smart(&addr, &QueryMsg::ItemsCount {})
+            .unwrap();
+
+        assert_eq!(
+            resp,
+            Items {
+                chocolates: 19,
+                water_bottles: 0,
+                chips: 20,
+            }
+        );
+
+        let _resp = app
+            .execute_contract(
+                Addr::unchecked("owner"),
+                addr.clone(),
+                &ExecuteMsg::Refill { 
+                    number: 40
+                 },
+                &[],
+            )
+            .unwrap();
+
+        let resp: Items = app
+            .wrap()
+            .query_wasm_smart(&addr, &QueryMsg::ItemsCount {})
+            .unwrap();
+
+        assert_eq!(
+            resp,
+            Items {
+                chocolates: 59,
+                water_bottles: 40,
+                chips: 60,
+            }
+        );
     }
 }

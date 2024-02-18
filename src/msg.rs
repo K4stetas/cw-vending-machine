@@ -1,44 +1,28 @@
-use cosmwasm_std::{Addr};
 use cosmwasm_schema::{cw_serde, QueryResponses};
 
 #[cw_serde]
 pub struct InstantiateMsg {
-    pub admins: Vec<String>,
     pub chocolates: u64,
-    pub water: u64,
+    pub water_bottles: u64,
     pub chips: u64,
 }
 
 #[cw_serde]
 pub enum ExecuteMsg {
-    AddMembers { admins: Vec<String> },
-    Leave {},
+    GetItem { category: String },
+    Refill { number: u64 },
 }
 
 #[cw_serde]
-pub struct GreetResp {
-    pub message: String,
-}
-
-#[cw_serde]
-pub struct AdminsListResp {
-    pub admins: Vec<Addr>,
-}
-
-#[cw_serde]
-pub struct ItemsCount {
+pub struct Items{
     pub chocolates: u64,
-    pub water: u64,
+    pub water_bottles: u64,
     pub chips: u64,
 }
 
 #[cw_serde]
 #[derive(QueryResponses)]
 pub enum QueryMsg {
-    #[returns(GreetResp)]
-    Greet {},
-    #[returns(AdminsListResp)]
-    AdminsList {},
-    #[returns(ItemsCount)]
-    Items {},
+    #[returns(Items)]
+    ItemsCount {},
 }

@@ -1,6 +1,6 @@
 # CosmWasmContract
 Vending machin
 
-Contains chocolates water and chips. Max amount of each is maximum u64 type value.
+Contains chocolates, water bottles and chips. Max qantity of each is maximum u64 type value.
 
 
